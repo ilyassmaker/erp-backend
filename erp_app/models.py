@@ -1,9 +1,8 @@
+
 from datetime import date, timedelta
-from decimal import Decimal
 
 from django.db import models
 from django.db.models import Sum
-from django.utils import timezone
 
 
 class Person(models.Model):
@@ -25,7 +24,7 @@ class Person(models.Model):
 class Produit(models.Model):
     nom = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    stock = models.PositiveIntegerField(default=0)
+    stock = models.PositiveIntegerField(default=0) 
     prix_achat = models.DecimalField(max_digits=10, decimal_places=2)
     prix_vente = models.DecimalField(max_digits=10, decimal_places=2)
 
@@ -33,6 +32,9 @@ class Produit(models.Model):
         return self.nom
 
 
+# ---------------------------------------------------------------------------
+#  ACHATS
+# ---------------------------------------------------------------------------
 class Achat(models.Model):
     STATUT_CHOICES = [
         ("en attente", "En attente"),
@@ -61,6 +63,9 @@ class LigneAchat(models.Model):
         return f"{self.produit} x {self.quantite}"
 
 
+# ---------------------------------------------------------------------------
+#  COMMANDES
+# ---------------------------------------------------------------------------
 class Commande(models.Model):
     STATUT_CHOICES = [
         ("en attente", "En attente"),
@@ -89,6 +94,9 @@ class LigneCommande(models.Model):
         return f"{self.produit} x {self.quantite}"
 
 
+# ---------------------------------------------------------------------------
+#  FACTURES
+# ---------------------------------------------------------------------------
 class Facture(models.Model):
     STATUT_CHOICES = [
         ("impayée", "Impayée"),
@@ -99,8 +107,8 @@ class Facture(models.Model):
     commande = models.OneToOneField(Commande, on_delete=models.CASCADE, null=True, blank=True)
     achat = models.OneToOneField(Achat, on_delete=models.CASCADE, null=True, blank=True)
 
-    montant_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
-    montant_paye = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    montant_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    montant_paye = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     date_facture = models.DateField(auto_now_add=True)
     date_echeance_restant = models.DateField(null=True, blank=True)
@@ -118,12 +126,15 @@ class Facture(models.Model):
         return f"Facture #{self.id} - {self.statut}"
 
 
+# ---------------------------------------------------------------------------
+#  COMPTES BANCAIRES & TRÉSORERIE
+# ---------------------------------------------------------------------------
 class CompteBancaire(models.Model):
     nom_banque = models.CharField(max_length=100)
     numero_compte = models.CharField(max_length=50)
     description = models.CharField(max_length=100, blank=True)
     est_actif = models.BooleanField(default=True)
-    solde = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    solde = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
 
     def __str__(self):
         return f"{self.nom_banque} - {self.numero_compte}"
@@ -146,21 +157,45 @@ class TransactionTresorerie(models.Model):
         return f"{self.type} - {self.montant} DH le {self.date_transaction} {compte}"
 
 
+# ---------------------------------------------------------------------------
+#  PAIEMENTS
+# ---------------------------------------------------------------------------
 class Paiement(models.Model):
+    METHODE_CHOICES = [
+        ("espèce", "Espèce"),
+        ("virement", "Virement"),
+        ("chèque", "Chèque"),
+    ]
+
     facture = models.ForeignKey(Facture, on_delete=models.CASCADE)
-    compte_bancaire = models.ForeignKey(CompteBancaire, on_delete=models.SET_NULL, null=True, blank=True)
     montant = models.DecimalField(max_digits=10, decimal_places=2)
-    date_paiement = models.DateField(default=timezone.now)
+    date_paiement = models.DateField(auto_now_add=True)
+    methode = models.CharField(max_length=50, choices=METHODE_CHOICES, default="espèce")
+    compte_bancaire = models.ForeignKey(CompteBancaire, on_delete=models.SET_NULL, null=True, blank=True)
     reference_paiement = models.CharField(max_length=100, blank=True)
-    paiement_complet = models.BooleanField(default=True)
+    paiement_complet    = models.BooleanField(default=True)
     date_echeance_solde = models.DateField(null=True, blank=True)
 
+    def __str__(self):
+        return f"Paiement {self.montant} DH facture {self.facture_id}"
+
+    # ------------------------------------------------------------
+    # Logique de cascade : trésorerie + mise à jour facture/statut
+    # ------------------------------------------------------------
     def save(self, *args, **kwargs):
         is_new = self._state.adding
         super().save(*args, **kwargs)
 
+        # Créer la ligne de trésorerie à la création
         if is_new and self.compte_bancaire:
-            t_type = "entrée" if self.facture.commande else "sortie"
+            # Déterminer sens du flux
+            if self.facture.commande:
+                t_type = "entrée"  # client paie -> argent entre
+            elif self.facture.achat:
+                t_type = "sortie"  # on paie fournisseur -> argent sort
+            else:
+                t_type = "entrée"
+
             TransactionTresorerie.objects.create(
                 compte=self.compte_bancaire,
                 type=t_type,
@@ -169,30 +204,40 @@ class Paiement(models.Model):
                 paiement=self,
                 facture=self.facture,
             )
-            self.compte_bancaire.solde += self.montant if t_type == "entrée" else -self.montant
+
+            # Mise à jour solde compte
+            if t_type == "entrée":
+                self.compte_bancaire.solde += self.montant
+            else:
+                self.compte_bancaire.solde -= self.montant
             self.compte_bancaire.save(update_fields=["solde"])
 
-        total_paye = self.facture.paiement_set.aggregate(total=Sum("montant"))['total'] or 0
+        # ---------------------------------------------
+        #   Mettre à jour montant_paye + statut facture
+        # ---------------------------------------------
+        total_paye = self.facture.paiement_set.aggregate(total=Sum("montant"))["total"] or 0
         self.facture.montant_paye = total_paye
-        reste = self.facture.montant_total - total_paye
 
+        reste = self.facture.montant_total - total_paye
         if reste <= 0:
             self.facture.statut = "payée"
             self.facture.date_echeance_restant = None
         else:
             self.facture.statut = "partielle" if total_paye > 0 else "impayée"
-            if not self.paiement_complet and self.date_echeance_solde:
-                self.facture.date_echeance_restant = self.date_echeance_solde
-            elif not self.facture.date_echeance_restant:
+            # si aucun échéancier défini, propose +7 jours par défaut
+            if not self.facture.date_echeance_restant:
                 self.facture.date_echeance_restant = date.today() + timedelta(days=7)
 
         self.facture.save(update_fields=["montant_paye", "statut", "date_echeance_restant"])
 
 
+# ---------------------------------------------------------------------------
+#  RELANCES PAIEMENT
+# ---------------------------------------------------------------------------
 class RelancePaiement(models.Model):
     facture = models.ForeignKey(Facture, on_delete=models.CASCADE, related_name="relances")
     date_relance = models.DateField(auto_now_add=True)
-    statut = models.CharField(max_length=20, default="envoyée")
+    statut = models.CharField(max_length=20, default="envoyée")  # envoyée / réglée
     numero = models.PositiveSmallIntegerField(default=1)
     note = models.TextField(blank=True)
 
@@ -200,6 +245,9 @@ class RelancePaiement(models.Model):
         return f"Relance #{self.numero} facture {self.facture_id}"
 
 
+# ---------------------------------------------------------------------------
+#  CONFIGURATION ERP (singleton)
+# ---------------------------------------------------------------------------
 class ConfigurationERP(models.Model):
     utiliser_comptes_bancaires = models.BooleanField(
         default=False, verbose_name="Utiliser la gestion des comptes bancaires"

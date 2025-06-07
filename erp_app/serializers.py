@@ -18,12 +18,13 @@ class ProduitSerializer(serializers.ModelSerializer):
 
 
 class LigneAchatSerializer(serializers.ModelSerializer):
+        
+    quantite = serializers.IntegerField()
     produit_nom = serializers.CharField(source='produit.nom', read_only=True)
-    achat = serializers.PrimaryKeyRelatedField(queryset=Achat.objects.all(), required=False)
 
     class Meta:
         model = LigneAchat
-        fields = ['id', 'achat', 'produit', 'produit_nom', 'quantite', 'prix_unitaire']
+        fields = ['id', 'produit', 'produit_nom', 'quantite', 'prix_unitaire']
 
 
 class AchatSerializer(serializers.ModelSerializer):
@@ -50,11 +51,8 @@ class AchatSerializer(serializers.ModelSerializer):
         return achat
 
 
-
 class LigneCommandeSerializer(serializers.ModelSerializer):
     produit_nom = serializers.CharField(source='produit.nom', read_only=True)
-    commande = serializers.PrimaryKeyRelatedField(queryset=Commande.objects.all(), required=False)
-
 
     def validate(self, data):
         produit = data['produit']
@@ -122,41 +120,30 @@ class FactureSerializer(serializers.ModelSerializer):
         return obj.statut
 
 class PaiementSerializer(serializers.ModelSerializer):
-    paiement_complet = serializers.BooleanField()
+    paiement_complet    = serializers.BooleanField()
     date_echeance_solde = serializers.DateField(allow_null=True, required=False)
-    methode = serializers.CharField(required=False)  # Ajoute ça
-    compte_bancaire = serializers.PrimaryKeyRelatedField(
-        queryset=CompteBancaire.objects.all(), required=False
-    )
+
 
     def validate(self, data):
-        facture = data.get('facture') or (self.instance and self.instance.facture)
-        montant = data.get('montant') or (self.instance and self.instance.montant)
-
-        # Montant strictement positif
-        if montant is not None and montant <= 0:
+        facture = data.get('facture') or self.instance.facture
+        montant = data.get('montant') or self.instance.montant
+        if montant <= 0:
             raise serializers.ValidationError("Le montant doit être strictement positif.")
-
-        # Si paiement partiel, date d’échéance obligatoire
-        paiement_complet = data.get('paiement_complet', True)
-        if not paiement_complet and not data.get('date_echeance_solde'):
+        if facture:
+            reste = facture.montant_total - facture.montant_paye
+            if montant > reste:
+                raise serializers.ValidationError(f"Le montant dépasse le reste à payer ({reste} DH).")
+        return data
+        if not data.get('paiement_complet') and not data.get('date_echeance_solde'):
             raise serializers.ValidationError(
                 "Pour un paiement partiel, 'date_echeance_solde' est obligatoire."
             )
-
-        # Vérifier que le paiement n’excède pas le reste à payer
-        if facture and montant is not None:
-            reste = facture.montant_total - facture.montant_paye
-            if montant > reste:
-                raise serializers.ValidationError(
-                    f"Le montant dépasse le reste à payer ({reste} DH)."
-                )
-
         return data
 
     class Meta:
         model = Paiement
         fields = '__all__'
+
 
 class CompteBancaireSerializer(serializers.ModelSerializer):
     class Meta:
