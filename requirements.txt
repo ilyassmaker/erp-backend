@@ -1,0 +1,8 @@
+Django>=5.1
+djangorestframework
+numpy
+matplotlib
+scikit-learn
+django-cors-headers
+reportlab
+psycopg2-binary

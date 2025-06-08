@@ -15,7 +15,7 @@ import base64
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from datetime import datetime
-
+from .utils import predire_risque_facture
 import matplotlib
 matplotlib.use('Agg') 
 
@@ -439,3 +439,11 @@ def predict_plot(request, produit_id):
 
     except Exception as e:
         return HttpResponse(f"Erreur: {str(e)}", status=500)
+
+@api_view(['GET'])
+def risque_facture(request, client_id):
+    """Renvoie la probabilité de non-paiement pour un client."""
+    risk = predire_risque_facture(client_id)
+    if risk is None:
+        return Response({'detail': 'Modèle indisponible'}, status=404)
+    return Response({'risque': risk})

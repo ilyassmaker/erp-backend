@@ -20,6 +20,18 @@ This is the backend of the ERP system, built with **Django** and **Django REST F
 - 📄 ReportLab (PDF generation)
 - 📬 CORS / JWT / API token ready
 
+## 📚 Dependencies
+
+The project uses a `requirements.txt` file. Core libraries include:
+
+- Django
+- djangorestframework
+- numpy
+- matplotlib
+- scikit-learn
+- django-cors-headers
+- reportlab
+
 ---
 
 ## 📦 Installation (dev)
@@ -41,3 +53,20 @@ python manage.py migrate
 
 # 5. Lance le serveur local
 python manage.py runserver
+
+### API Endpoint
+
+```
+GET /api/predict-plot/<produit_id>/
+```
+Returns a PNG graph with the predicted sales for the specified product.
+
+## Database Configuration
+
+You can override the default PostgreSQL settings using environment variables:
+
+- `DB_NAME` – database name (default: `erpdb`)
+- `DB_USER` – database user (default: `postgres`)
+- `DB_PASSWORD` – database password (default: `ilyas`)
+- `DB_HOST` – database host (default: `localhost`)
+- `DB_PORT` – database port (default: `5432`)

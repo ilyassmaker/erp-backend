@@ -133,12 +133,18 @@ class PaiementSerializer(serializers.ModelSerializer):
         if facture:
             reste = facture.montant_total - facture.montant_paye
             if montant > reste:
-                raise serializers.ValidationError(f"Le montant dépasse le reste à payer ({reste} DH).")
-        return data
-        if not data.get('paiement_complet') and not data.get('date_echeance_solde'):
+                raise serializers.ValidationError(
+                    f"Le montant dépasse le reste à payer ({reste} DH)."
+                )
+
+        if (
+            not data.get("paiement_complet")
+            and not data.get("date_echeance_solde")
+        ):
             raise serializers.ValidationError(
                 "Pour un paiement partiel, 'date_echeance_solde' est obligatoire."
             )
+            
         return data
 
     class Meta:
