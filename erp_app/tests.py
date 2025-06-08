@@ -1,8 +1,9 @@
 from datetime import date
 
 from django.test import TestCase, override_settings
+from .models import Commande, Facture
+from .utils import predire_risque_facture, categoriser_risque
 
-from .models import Facture
 from .serializers import PaiementSerializer
 
 TEST_DATABASES = {
@@ -89,3 +90,42 @@ class PersonAPITest(TestCase):
         response = self.client.get(url + "?type=client")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.json()), 1)
+
+
+class RisqueClientTest(TestCase):
+    def setUp(self):
+        self.client_obj = Person.objects.create(
+            type="client",
+            nom="Client Test",
+            email="test@example.com",
+            telephone="0600000000",
+        )
+
+    def test_predire_risque_facture(self):
+        # Nettoyage de sécurité (pas indispensable mais évite les doublons)
+        Commande.objects.all().delete()
+        Facture.objects.all().delete()
+
+        # ➜ 3 commandes distinctes
+        cmd1 = Commande.objects.create(client=self.client_obj)
+        cmd2 = Commande.objects.create(client=self.client_obj)
+        cmd3 = Commande.objects.create(client=self.client_obj)
+
+        # ➜ 1 facture par commande  (respecte le OneToOneField)
+        Facture.objects.create(
+            commande=cmd1, montant_total=100, montant_paye=0, statut="impayée"
+        )
+        Facture.objects.create(
+            commande=cmd2, montant_total=100, montant_paye=0, statut="impayée"
+        )
+        Facture.objects.create(
+            commande=cmd3, montant_total=100, montant_paye=100, statut="payée"
+        )
+
+        # Test du score IA
+        proba = predire_risque_facture(self.client_obj.id)
+        self.assertIsNotNone(proba)
+        self.assertTrue(0 <= proba <= 1)
+
+        niveau = categoriser_risque(proba)
+        self.assertIn(niveau, ["faible", "modéré", "élevé"])

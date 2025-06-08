@@ -11,9 +11,17 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+import environ
 import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+env = environ.Env(
+    DEBUG=(bool, False),
+    SECRET_KEY=(str, 'unsafe-default'),
+    DATABASE_URL=(str, 'postgres://postgres:postgres@localhost:5432/erpdb'),
+    RISK_MODEL_PATH=(str, 'models/model_risque.pkl'),
+)
+environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 
 
 # Quick-start development settings - unsuitable for production
@@ -87,6 +95,7 @@ DATABASES = {
         'PASSWORD': os.getenv('DB_PASSWORD', 'ilyas'),
         'HOST': os.getenv('DB_HOST', 'localhost'),
         'PORT': os.getenv('DB_PORT', '5432'),
+        "default": env.db()
     }
 }
 

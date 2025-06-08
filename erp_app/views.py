@@ -442,8 +442,10 @@ def predict_plot(request, produit_id):
 
 @api_view(['GET'])
 def risque_facture(request, client_id):
-    """Renvoie la probabilité de non-paiement pour un client."""
+    """Renvoie la probabilité et la catégorie de risque pour un client."""
     risk = predire_risque_facture(client_id)
     if risk is None:
         return Response({'detail': 'Modèle indisponible'}, status=404)
-    return Response({'risque': risk})
+
+    niveau = categoriser_risque(risk)
+    return Response({'risque': round(risk, 2), 'niveau': niveau})

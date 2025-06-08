@@ -27,3 +27,10 @@ def predire_risque_facture(client_id: int):
         proba = model.predict(features)[0]
 
     return float(proba)
+
+def categoriser_risque(proba: float) -> str:
+    if proba < 0.3:
+        return "faible"
+    elif proba < 0.7:
+        return "modéré"
+    return "élevé"

@@ -6,3 +6,4 @@ scikit-learn
 django-cors-headers
 reportlab
 psycopg2-binary
+django-environ
