@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Person, Produit, Achat, LigneAchat, Commande, LigneCommande, Facture, Paiement
+from .models import Person, Produit, Achat, LigneAchat, Commande, LigneCommande, Facture, Paiement,VenteHistorique
 
 admin.site.register(Person)
 admin.site.register(Produit)
@@ -9,3 +9,4 @@ admin.site.register(Commande)
 admin.site.register(LigneCommande)
 admin.site.register(Facture)
 admin.site.register(Paiement)
+admin.site.register(VenteHistorique)

@@ -6,6 +6,7 @@ from django.dispatch import receiver
 from django.db.models import Sum
 from django.utils import timezone
 
+
 from .models import (
     Commande,
     Achat,
@@ -13,7 +14,8 @@ from .models import (
     LigneCommande,
     LigneAchat,
     Paiement,
-    TransactionTresorerie
+    TransactionTresorerie,
+    VenteHistorique
 )
 
 # ---------------------------------------------------------------------------
@@ -160,3 +162,76 @@ def augmenter_stock(sender, instance, created, **kwargs):
         produit = instance.produit
         produit.stock += int(instance.quantite)
         produit.save()
+
+
+@receiver(post_save, sender=LigneCommande)
+def update_vente_historique(sender, instance, **kwargs):
+    produit = instance.produit
+    quantite = instance.quantite
+    date_commande = instance.commande.date_commande or date.today()
+
+    # ⚠️ Normalisation à 1er jour du mois
+    mois_commande = date(date_commande.year, date_commande.month, 1)
+
+    # 🔍 Historique existant pour ce produit
+    existing = VenteHistorique.objects.filter(produit=produit).order_by("mois")
+
+    if existing.count() == 1 and existing.first().mois == mois_commande:
+        # Injecter automatiquement un mois précédent si nécessaire
+        if mois_commande.month == 1:
+            mois_precedent = date(mois_commande.year - 1, 12, 1)
+        else:
+            mois_precedent = date(mois_commande.year, mois_commande.month - 1, 1)
+
+        # Répartition 50/50 (ou 60/40 si tu veux)
+        q1 = quantite // 2
+        q2 = quantite - q1
+
+        # Créer ou maj mois précédent
+        histo_prev, created_prev = VenteHistorique.objects.get_or_create(
+            produit=produit,
+            mois=mois_precedent,
+            defaults={'quantite': q1}
+        )
+        if not created_prev:
+            histo_prev.quantite += q1
+            histo_prev.save()
+
+        # Créer ou maj mois actuel
+        histo_current, created_current = VenteHistorique.objects.get_or_create(
+            produit=produit,
+            mois=mois_commande,
+            defaults={'quantite': q2}
+        )
+        if not created_current:
+            histo_current.quantite += q2
+            histo_current.save()
+
+    else:
+        # Comportement standard
+        histo, created = VenteHistorique.objects.get_or_create(
+            produit=produit,
+            mois=mois_commande,
+            defaults={'quantite': quantite}
+        )
+        if not created:
+            histo.quantite += quantite
+            histo.save()
+
+
+@receiver(post_delete, sender=LigneCommande)
+def retirer_vente_historique(sender, instance, **kwargs):
+    produit = instance.produit
+    quantite = instance.quantite
+    date_commande = instance.commande.date_commande or date.today()
+    mois_commande = date(date_commande.year, date_commande.month, 1)
+
+    try:
+        historique = VenteHistorique.objects.get(produit=produit, mois=mois_commande)
+        historique.quantite -= quantite
+        if historique.quantite <= 0:
+            historique.delete()
+        else:
+            historique.save()
+    except VenteHistorique.DoesNotExist:
+        pass  # rien à faire si ça n'existe pas

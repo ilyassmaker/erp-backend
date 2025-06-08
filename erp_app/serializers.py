@@ -79,7 +79,8 @@ class CommandeSerializer(serializers.ModelSerializer):
         lignes_data = self.context['request'].data.get('lignes', [])
         commande = Commande.objects.create(
             client=validated_data['client'],
-            statut=validated_data.get('statut', 'en attente')
+            statut=validated_data.get('statut', 'en attente'),
+            date_commande=validated_data.get('date_commande', date.today())
         )
         for ligne_data in lignes_data:
             LigneCommande.objects.create(

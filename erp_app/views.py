@@ -7,13 +7,24 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 import io
 from django.utils.timezone import localdate   # ✅ ajoute ceci
+from rest_framework.decorators import api_view
+from .ml.prediction import predire_vente_mois_prochain
+import matplotlib.pyplot as plt
+from io import BytesIO
+import base64
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from datetime import datetime
+
+import matplotlib
+matplotlib.use('Agg') 
 
 from rest_framework.response import Response
 from rest_framework import status
 from django.utils.timezone import now
 from .models import (
     Person, Produit, Achat, LigneAchat, Commande, LigneCommande, Facture,
-    Paiement, CompteBancaire, TransactionTresorerie, RelancePaiement
+    Paiement, CompteBancaire, TransactionTresorerie, RelancePaiement,VenteHistorique
 )
 from .serializers import (
     PersonSerializer, ProduitSerializer, AchatSerializer, LigneAchatSerializer,
@@ -332,3 +343,99 @@ class RelancePaiementViewSet(viewsets.ModelViewSet):
 # 🌿 Home
 def home(request):
     return render(request, 'home.html')
+
+
+
+@api_view(['GET'])
+def predict_ventes(request, produit_id):
+    prediction = predire_vente_mois_prochain(produit_id)
+    return Response({"prediction": prediction})
+
+
+@api_view(['GET'])
+def historique_ventes(request, produit_id):
+    ventes = (
+        VenteHistorique.objects
+        .filter(produit_id=produit_id)
+        .order_by('mois')
+        .values_list('mois', 'quantite')
+    )
+    # Formatage en liste JSON
+    data = [
+        {"mois": mois.strftime('%Y-%m'), "quantite": quantite}
+        for mois, quantite in ventes
+    ]
+    return Response(data)
+
+
+def ventes_prediction_plot(request):
+    # 1. Charger les données
+    ventes = VenteHistorique.objects.all().order_by('mois')
+    if not ventes.exists():
+        return HttpResponse("Pas de données", status=404)
+
+    mois = np.array([v.mois.month for v in ventes]).reshape(-1, 1)
+    quantites = np.array([v.quantite for v in ventes])
+
+    # 2. Modèle linéaire simple
+    model = LinearRegression()
+    model.fit(mois, quantites)
+
+    future_months = np.array([[mois[-1][0] + 1]])
+    prediction = model.predict(future_months)
+
+    # 3. Graphe matplotlib
+    plt.figure(figsize=(8, 4))
+    plt.scatter(mois, quantites, color='blue', label='Historique')
+    plt.plot(mois, model.predict(mois), color='orange', label='Régression')
+    plt.scatter(future_months, prediction, color='green', label='Prévision')
+    plt.xlabel("Mois")
+    plt.ylabel("Quantité vendue")
+    plt.title("Prévision des ventes")
+    plt.legend()
+    plt.tight_layout()
+
+    # 4. Sauvegarde dans un buffer
+    buffer = BytesIO()
+    plt.savefig(buffer, format='png')
+    buffer.seek(0)
+
+    return HttpResponse(buffer.getvalue(), content_type='image/png')
+
+
+def predict_plot(request, produit_id):
+    try:
+        historique = VenteHistorique.objects.filter(produit_id=produit_id).order_by('mois')
+        if not historique.exists():
+            return HttpResponse("Pas de données", status=404)
+
+        X = np.array(range(len(historique))).reshape(-1, 1)
+        y = np.array([h.quantite for h in historique])
+
+        model = LinearRegression().fit(X, y)
+        y_pred = model.predict(X)
+
+        # Prévision mois suivant
+        next_month = model.predict([[len(X)]])
+
+        # Graph
+        plt.figure(figsize=(8, 4))
+        plt.plot(X, y, 'bo-', label='Ventes réelles')
+        plt.plot(X, y_pred, 'r--', label='Régression')
+        plt.plot(len(X), next_month, 'go', label='Prévision')
+        plt.title(f"Prévision des ventes - Produit ID {produit_id}")
+        plt.xlabel("Mois (index)")
+        plt.ylabel("Quantité vendue")
+        plt.legend()
+        plt.grid(True)
+
+        # Génère l'image dans un buffer
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        plt.close()
+        buf.seek(0)
+
+        return HttpResponse(buf.getvalue(), content_type='image/png')
+
+    except Exception as e:
+        return HttpResponse(f"Erreur: {str(e)}", status=500)

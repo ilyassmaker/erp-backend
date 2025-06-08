@@ -261,3 +261,11 @@ class ConfigurationERP(models.Model):
     def get_config(cls):
         instance, _ = cls.objects.get_or_create(pk=1)
         return instance
+
+class VenteHistorique(models.Model):
+    produit = models.ForeignKey(Produit, on_delete=models.CASCADE)
+    mois = models.DateField()  # Ex: 2024-03-01
+    quantite = models.PositiveIntegerField()
+
+    def __str__(self):
+        return f"{self.produit.nom} - {self.mois.strftime('%Y-%m')} : {self.quantite}"
