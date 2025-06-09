@@ -100,11 +100,14 @@ class FactureSerializer(serializers.ModelSerializer):
     reste_a_payer = serializers.SerializerMethodField()
     date_echeance_restant = serializers.DateField(read_only=True)
     statut_paiement = serializers.SerializerMethodField()
+    client = serializers.SerializerMethodField()
+    fournisseur = serializers.SerializerMethodField()
+
 
     class Meta:
         model = Facture
         fields = [
-            'id', 'commande', 'achat', 'client_nom', 'fournisseur_nom',
+            'id', 'commande', 'achat', 'client', 'fournisseur', 'client_nom', 'fournisseur_nom',
             'montant_total', 'montant_paye', 'reste_a_payer', 'date_echeance_restant',
             'statut_paiement', 'date_facture'
         ]
@@ -120,6 +123,13 @@ class FactureSerializer(serializers.ModelSerializer):
 
     def get_statut_paiement(self, obj):
         return obj.statut
+    
+    def get_client(self, obj):
+        return obj.commande.client.id if obj.commande and obj.commande.client else None
+
+    def get_fournisseur(self, obj):
+        return obj.achat.fournisseur.id if obj.achat and obj.achat.fournisseur else None
+
 
 class PaiementSerializer(serializers.ModelSerializer):
     paiement_complet    = serializers.BooleanField()
