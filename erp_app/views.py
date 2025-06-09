@@ -440,12 +440,11 @@ def predict_plot(request, produit_id):
     except Exception as e:
         return HttpResponse(f"Erreur: {str(e)}", status=500)
 
-@api_view(['GET'])
-def risque_facture(request, client_id):
-    """Renvoie la probabilité et la catégorie de risque pour un client."""
-    risk = predire_risque_facture(client_id)
-    if risk is None:
-        return Response({'detail': 'Modèle indisponible'}, status=404)
 
-    niveau = categoriser_risque(risk)
-    return Response({'risque': round(risk, 2), 'niveau': niveau})
+@api_view(['GET'])
+def api_predire_risque(request, client_id):
+    res = predire_risque_facture(client_id)
+    return Response({
+        'risque_label': res['label'],
+        'niveau': res['niveau']
+    })

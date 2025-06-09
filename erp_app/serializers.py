@@ -4,6 +4,7 @@ from .models import (
     Paiement, CompteBancaire, TransactionTresorerie, RelancePaiement
 )
 
+from datetime import date
 
 class PersonSerializer(serializers.ModelSerializer):
     class Meta:

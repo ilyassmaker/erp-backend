@@ -6,7 +6,6 @@ from django.dispatch import receiver
 from django.db.models import Sum
 from django.utils import timezone
 
-
 from .models import (
     Commande,
     Achat,
@@ -45,14 +44,30 @@ def _refresh_facture_statut(facture: Facture):
 # ---------------------------------------------------------------------------
 
 @receiver(post_save, sender=Commande)
-def create_or_update_facture_commande(sender, instance, **kwargs):
-    facture, _ = Facture.objects.get_or_create(commande=instance)
+def create_or_update_facture_commande(sender, instance, created, **kwargs):
+    # 1) Création → on ne fait ça qu'une seule fois
+    if created:
+        Facture.objects.create(
+            commande=instance,
+            montant_total=0,
+            statut='en attente'
+        )
+        return
+
+    # 2) Mise à jour → on ne touche qu'à la facture déjà existante
+    try:
+        facture = Facture.objects.get(commande=instance)
+    except Facture.DoesNotExist:
+        return
+
+    # Recalcul du montant et du statut
     lignes = LigneCommande.objects.filter(commande=instance)
     total = sum((l.prix_unitaire or 0) * (l.quantite or 0) for l in lignes)
     facture.montant_total = total
     facture.commande_lignes.set(lignes)
     facture.save(update_fields=["montant_total"])
     _refresh_facture_statut(facture)
+
 
 @receiver([post_save, post_delete], sender=LigneCommande)
 def update_facture_on_lignecommande_change(sender, instance, **kwargs):
@@ -78,8 +93,20 @@ def delete_facture_commande(sender, instance, **kwargs):
 # ---------------------------------------------------------------------------
 
 @receiver(post_save, sender=Achat)
-def create_or_update_facture_achat(sender, instance, **kwargs):
-    facture, _ = Facture.objects.get_or_create(achat=instance)
+def create_or_update_facture_achat(sender, instance, created, **kwargs):
+    if created:
+        Facture.objects.create(
+            achat=instance,
+            montant_total=0,
+            statut='en attente'
+        )
+        return
+
+    try:
+        facture = Facture.objects.get(achat=instance)
+    except Facture.DoesNotExist:
+        return
+
     lignes = LigneAchat.objects.filter(achat=instance)
     total = sum((l.prix_unitaire or 0) * (l.quantite or 0) for l in lignes)
     facture.montant_total = total

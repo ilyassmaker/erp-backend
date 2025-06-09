@@ -1,36 +1,41 @@
-import os
-import joblib
-import numpy as np
-from django.conf import settings
-from .models import Facture
+# erp_app/utils.py
 
-MODEL_PATH = os.path.join(settings.BASE_DIR, 'erp_app', 'ml', 'model_risque_facture.joblib')
+from .ml.prediction import predict_statut_risque
+from .models import Facture, Commande
+from django.db.models import Sum
 
-def predire_risque_facture(client_id: int):
-    """Retourne un score de risque de non-paiement pour un client.
-
-    Si le modèle n'est pas disponible, ``None`` est renvoyé.
+def predire_risque_facture(client_id):
     """
-    if not os.path.exists(MODEL_PATH):
-        return None
-
-    model = joblib.load(MODEL_PATH)
-
+    Calcule les features au niveau client et renvoie:
+        {'risque': score_label, 'niveau': 'faible'/'modéré'/'élevé'}
+    """
+    # 1) Récupère toutes les factures du client
     factures = Facture.objects.filter(commande__client_id=client_id)
-    nb_factures = factures.count()
-    nb_impayes = factures.filter(statut__in=['impayée', 'partielle']).count()
-    features = np.array([[nb_factures, nb_impayes]])
+    # 2) Construit les features agrégées
+    montant_total = float(factures.aggregate(total=Sum('montant_total'))['total'] or 0)
+    nb_relances = factures.aggregate(r=Sum('relances__count'))['r'] or 0
+    # pour chaque facture, récupère premier paiement
+    delai_list = []
+    for f in factures:
+        p = f.paiement_set.order_by('date_paiement').first()
+        if p:
+            delai_list.append((p.date_paiement - f.date_facture).days)
+    delai_paiement = sum(delai_list)/len(delai_list) if delai_list else 0
+    nb_commandes_client = Commande.objects.filter(client_id=client_id).count()
+    total_achats_client = montant_total
+    # moyenne des retards historiques
+    retard_list = delai_list
+    moyenne_retard_client = sum(retard_list)/len(retard_list) if retard_list else 0
 
-    if hasattr(model, 'predict_proba'):
-        proba = model.predict_proba(features)[0, 1]
-    else:
-        proba = model.predict(features)[0]
-
-    return float(proba)
-
-def categoriser_risque(proba: float) -> str:
-    if proba < 0.3:
-        return "faible"
-    elif proba < 0.7:
-        return "modéré"
-    return "élevé"
+    feats = {
+        'montant_total': montant_total,
+        'nb_relances': nb_relances,
+        'delai_paiement': delai_paiement,
+        'nb_commandes_client': nb_commandes_client,
+        'total_achats_client': total_achats_client,
+        'moyenne_retard_client': moyenne_retard_client,
+    }
+    label = predict_statut_risque(feats)
+    # Mapping label→niveau
+    niveau = {0: 'élevé', 1: 'modéré', 2: 'faible'}[label]
+    return {'label': label, 'niveau': niveau}

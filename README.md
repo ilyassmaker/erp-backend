@@ -53,7 +53,7 @@ python manage.py migrate
 
 # 5. Lance le serveur local
 python manage.py runserver
-
+```
 ### API Endpoint
 
 ```

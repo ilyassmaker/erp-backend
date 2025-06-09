@@ -1,9 +1,11 @@
 from datetime import date
-
 from django.test import TestCase, override_settings
-from .models import Commande, Facture
-from .utils import predire_risque_facture, categoriser_risque
+from django.db.models import Sum, F
 
+from .models import Commande, Facture, Produit, LigneCommande, Person
+
+import os
+from .utils import predire_risque_facture, categoriser_risque, MODEL_PATH
 from .serializers import PaiementSerializer
 
 TEST_DATABASES = {
@@ -38,6 +40,7 @@ class PaiementSerializerTest(TestCase):
         }
         serializer = PaiementSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
+
 
 from django.test import TestCase
 from django.urls import reverse
@@ -95,37 +98,43 @@ class PersonAPITest(TestCase):
 class RisqueClientTest(TestCase):
     def setUp(self):
         self.client_obj = Person.objects.create(
-            type="client",
-            nom="Client Test",
-            email="test@example.com",
-            telephone="0600000000",
+            type='client', nom='Client Test', email='a@b.com', telephone='123'
+        )
+        self.produit = Produit.objects.create(
+            nom="Test produit", 
+            description="desc", 
+            prix_vente=100, 
+            prix_achat=50, 
+            stock=100
         )
 
     def test_predire_risque_facture(self):
-        # Nettoyage de sécurité (pas indispensable mais évite les doublons)
-        Commande.objects.all().delete()
-        Facture.objects.all().delete()
+        # Création de deux commandes distinctes
+        commande1 = Commande.objects.create(client=self.client_obj, statut='livrée')
+        commande2 = Commande.objects.create(client=self.client_obj, statut='livrée')
 
-        # ➜ 3 commandes distinctes
-        cmd1 = Commande.objects.create(client=self.client_obj)
-        cmd2 = Commande.objects.create(client=self.client_obj)
-        cmd3 = Commande.objects.create(client=self.client_obj)
+        # Lignes de commande associées
+        LigneCommande.objects.create(commande=commande1, produit=self.produit, quantite=1, prix_unitaire=100)
+        LigneCommande.objects.create(commande=commande2, produit=self.produit, quantite=1, prix_unitaire=100)
 
-        # ➜ 1 facture par commande  (respecte le OneToOneField)
-        Facture.objects.create(
-            commande=cmd1, montant_total=100, montant_paye=0, statut="impayée"
-        )
-        Facture.objects.create(
-            commande=cmd2, montant_total=100, montant_paye=0, statut="impayée"
-        )
-        Facture.objects.create(
-            commande=cmd3, montant_total=100, montant_paye=100, statut="payée"
-        )
+        # Récupération des factures créées automatiquement
+        facture1 = Facture.objects.get(commande=commande1)
+        facture2 = Facture.objects.get(commande=commande2)
 
-        # Test du score IA
+        # Calcul des montants totaux
+        total1 = commande1.lignecommande_set.aggregate(
+            total=Sum(F('quantite') * F('prix_unitaire'))
+        )['total'] or 0
+        total2 = commande2.lignecommande_set.aggregate(
+            total=Sum(F('quantite') * F('prix_unitaire'))
+        )['total'] or 0
+
+        facture1.montant_total = total1
+        facture1.save(update_fields=['montant_total'])
+        facture2.montant_total = total2
+        facture2.save(update_fields=['montant_total'])
+
+        # Test de la prédiction
         proba = predire_risque_facture(self.client_obj.id)
         self.assertIsNotNone(proba)
         self.assertTrue(0 <= proba <= 1)
-
-        niveau = categoriser_risque(proba)
-        self.assertIn(niveau, ["faible", "modéré", "élevé"])

@@ -20,3 +20,31 @@ def predire_vente_mois_prochain(produit_id):
     prediction = model.predict(np.array([[mois_suivant]]))[0]
 
     return round(prediction, 2)
+
+# erp_app/ml/prediction.py
+
+import joblib
+import numpy as np
+import os
+
+# Chemin vers le modèle entraîné
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "model_risque_facture_simple.joblib")
+MODEL = joblib.load(MODEL_PATH)
+
+# Les 6 features dans l'ordre attendu
+FEATURES = [
+    "montant_total",
+    "nb_relances",
+    "delai_paiement",
+    "nb_commandes_client",
+    "total_achats_client",
+    "moyenne_retard_client"
+]
+
+def predict_statut_risque(feature_dict):
+    """
+    feature_dict: dict contenant les 6 clés FEATURES
+    Retourne: int label prédict (0=impayée,1=partielle,2=payée)
+    """
+    X = np.array([[feature_dict[f] for f in FEATURES]])
+    return int(MODEL.predict(X)[0])

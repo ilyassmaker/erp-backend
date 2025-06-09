@@ -5,7 +5,7 @@ from .views import (
     CommandeViewSet, LigneCommandeViewSet, FactureViewSet, PaiementViewSet,
     CompteBancaireViewSet, TransactionTresorerieViewSet, RelancePaiementViewSet,
     home, download_facture_pdf, predict_ventes ,historique_ventes,predict_plot,ventes_prediction_plot,
-    risque_facture
+    api_predire_risque
 )
 
 router = DefaultRouter()
@@ -29,6 +29,6 @@ urlpatterns = [
     path('api/historique-ventes/<int:produit_id>/', historique_ventes),
     path('api/predict-plot/<int:produit_id>/', predict_plot),
     path('api/prediction-global/', ventes_prediction_plot, name='prediction_global'),  # ✅ corrigé ici
-    path('api/risque-facture/<int:client_id>/', risque_facture),
-]
+    path('api/risque-client/<int:client_id>/', api_predire_risque, name='risque-client'),
 
+]
