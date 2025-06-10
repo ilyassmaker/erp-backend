@@ -113,3 +113,9 @@ def categoriser_risque(score):
         return 'modéré'
     else:
         return 'élevé'
+
+
+
+
+
+
