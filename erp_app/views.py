@@ -448,3 +448,50 @@ def api_predire_risque(request, client_id):
         'risque_label': res['label'],
         'niveau': res['niveau']
     })
+
+# Dans views.py
+from django.http import JsonResponse
+from django.db.models import Count, Sum
+from .models import Commande
+from datetime import datetime, timedelta
+
+def commandes_stats(request):
+    try:
+        # 1. Total des commandes
+        total = Commande.objects.count()
+        
+        # 2. Données mensuelles
+        monthly_data = Commande.objects.annotate(
+            month=TruncMonth('date')
+        ).values('month').annotate(
+            count=Count('id'),
+            total_amount=Sum('montant')
+        ).order_by('-month')[:12]
+        
+        # 3. Statistiques par statut
+        status_stats = Commande.objects.values('statut').annotate(
+            count=Count('id')
+        )
+        
+        # 4. Commandes récentes
+        recent_orders = Commande.objects.select_related('client').order_by('-date')[:5]
+        
+        return JsonResponse({
+            'total': total,
+            'monthlyData': list(monthly_data),
+            'statusStats': list(status_stats),
+            'recentOrders': [
+                {
+                    'id': o.id,
+                    'date': o.date,
+                    'montant': o.montant,
+                    'client': {
+                        'nom': o.client.nom,
+                        'email': o.client.email
+                    }
+                } for o in recent_orders
+            ]
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
